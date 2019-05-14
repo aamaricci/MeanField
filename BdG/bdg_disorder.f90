@@ -2,29 +2,33 @@ program bdg_disorder
   USE SCIFOR
   USE DMFT_TOOLS
   implicit none
-  integer                               :: Nside,Nlat
-  integer                               :: Nloop
-  integer                               :: Lmats,Lreal
-  integer                               :: Nsuccess
-  real(8)                               :: Uloc
-  real(8)                               :: ts
-  real(8)                               :: beta
-  real(8)                               :: Wdis
-  real(8)                               :: wmixing
-  real(8)                               :: nsc
-  real(8)                               :: deltasc
-  real(8)                               :: wini,wfin
-  real(8)                               :: bdg_error
+  integer                                         :: Nside,Nlat
+  integer                                         :: Nloop
+  integer                                         :: Lmats,Lreal
+  integer                                         :: Nsuccess
+  real(8)                                         :: Uloc
+  real(8)                                         :: ts
+  real(8)                                         :: beta
+  real(8)                                         :: Wdis
+  real(8)                                         :: wmixing
+  real(8)                                         :: nsc
+  real(8)                                         :: deltasc
+  real(8)                                         :: wini,wfin
+  real(8)                                         :: bdg_error
 
-  real(8),allocatable,dimension(:)      :: erandom
-  real(8),dimension(:),allocatable      :: nii,pii ![Nlat]
-  logical                               :: converged,bool
-  integer                               :: i,is,iloop,nrandom,idum
-  real(8),dimension(:),allocatable      :: wm,wr
-  real(8),dimension(:,:),allocatable    :: H0              ![Nlat][Nlat]
-  character(len=50)                     :: finput
-  integer,dimension(:),allocatable      :: icol,irow
-  integer,dimension(:,:),allocatable    :: ij2site
+  real(8),allocatable,dimension(:)                :: erandom
+  real(8),dimension(:),allocatable                :: nii,pii ![Nlat]
+  real(8),dimension(:),allocatable                :: nii_prev,pii_prev ![Nlat]
+  logical                                         :: converged,bool
+  integer                                         :: i,is,iloop,nrandom,idum
+  real(8),dimension(:),allocatable                :: wm,wr
+  complex(8),allocatable,dimension(:,:,:,:)       :: Hk ![2][Nlat][Nlat][1]
+  real(8),dimension(:,:),allocatable              :: H0              ![Nlat][Nlat]
+  character(len=50)                               :: finput
+  integer,dimension(:),allocatable                :: icol,irow
+  integer,dimension(:,:),allocatable              :: ij2site
+  !
+  complex(8),allocatable,dimension(:,:,:,:,:,:,:) :: Gmats,Greal,Smats,Sreal ![2][Nlat][1][1][1][1][L]
 
   ! READ INPUT FILES !
   call parse_cmd_variable(finput,"FINPUT",default="inputBDG.conf")
@@ -45,6 +49,13 @@ program bdg_disorder
   call parse_input_variable(bdg_error,"BDG_ERROR",finput,default=0.00001d0,comment="Error threshold for the convergence")
   call parse_input_variable(nsuccess,"NSUCCESS",finput,default=1,comment="Number of successive iterations below threshold for convergence")
   call save_input_file(finput)
+
+  call add_ctrl_var(beta,"BETA")
+  call add_ctrl_var(0d0,"XMU")
+  call add_ctrl_var(wini,"WINI")
+  call add_ctrl_var(wfin,"WFIN")
+  call add_ctrl_var(0.1d0,"EPS")
+
   ! SET THE COMPRESSION THRESHOLD TO 1Mb (1024Kb)
   call set_store_size(1024)
 
@@ -52,8 +63,8 @@ program bdg_disorder
   Nlat = Nside*Nside
 
   ! ALLOCATE ALL THE REQUIRED VARIABLES !
-  allocate(nii(Nlat))
-  allocate(pii(Nlat))
+  allocate(nii(Nlat),nii_prev(Nlat))
+  allocate(pii(Nlat),pii_prev(Nlat))
 
   ! ALLOCATE MATSUBARA AND REAL FREQUENCIES !
   allocate(wm(Lmats),wr(Lreal))
@@ -72,9 +83,9 @@ program bdg_disorder
   inquire(file='erandom.restart',exist=bool)
   if(bool)then
      if(file_length('erandom.restart')/=Nlat)stop "ed_ahm_disorder error: found erandom.restart with length different from Nlat"
-     call read_data('erandom.restart',erandom)
+     call read_array('erandom.restart',erandom)
   endif
-  call store_data("erandom.ed",erandom)
+  call save_array("erandom.bdg",erandom)
 
 
   ! GET THE TIGHT BINDING HAMILTONIAN FOR THE SQUARE LATTICE 
@@ -85,8 +96,10 @@ program bdg_disorder
 
   nii=nsc;
   pii=deltasc;
-  call read_data("nVSisite.bdg",nii)
-  call read_data("phiVSisite.bdg",pii)
+  inquire(file="nVSisite.restart",exist=bool)
+  if(bool)call read_array("nVSisite.restart",nii)
+  inquire(file="phiVSisite.restart",exist=bool)
+  if(bool)call read_array("phiVSisite.restart",pii)
   iloop=0;
   converged=.false.;
   !+-------------------------------------+!
@@ -95,6 +108,14 @@ program bdg_disorder
      call start_loop(iloop,nloop,"BdG-loop")
 
      call BdG_Solve(nii,pii,H0)
+     !
+     nii_prev = nii
+     pii_prev = pii
+     if(iloop>1)then
+        nii = wmixing*nii + (1d0-wmixing)*nii_prev
+        pii = wmixing*pii + (1d0-wmixing)*pii_prev
+     endif
+     !
      converged = check_convergence_local(pii,bdg_error,nsuccess,nloop,file="error.err")
      call print_sc_out(converged)
 
@@ -103,7 +124,34 @@ program bdg_disorder
   !+-------------------------------------+!
 
 
+  allocate(Gmats(2,Nlat,1,1,1,1,Lmats),Smats(2,Nlat,1,1,1,1,Lmats))
+  allocate(Greal(2,Nlat,1,1,1,1,Lreal),Sreal(2,Nlat,1,1,1,1,Lreal))
+  Smats=zero ; Sreal=zero
+  Gmats=zero ; Greal=zero
+  forall(i=1:Nlat)
+     Smats(1,i,1,1,1,1,:)= Uloc*(nii(i)-0.5d0)
+     Sreal(1,i,1,1,1,1,:)= Uloc*(nii(i)-0.5d0)
+     Smats(2,i,1,1,1,1,:)= Uloc*pii(i)
+     Sreal(2,i,1,1,1,1,:)= Uloc*pii(i)
+  end forall
+  !
+  allocate(Hk(2,Nlat,Nlat,1))
+  Hk(1,:,:,1)    =     H0
+  Hk(2,:,:,1)    =    -H0
+  !
+
+  call dmft_gloc_matsubara(Hk,[1d0],Gmats,Smats)
+  call dmft_gloc_realaxis(Hk,[1d0],Greal,Sreal)
+
+  call dmft_print_gf_matsubara(Gmats(1,:,:,:,:,:,:),"Gmats",iprint=4)
+  call dmft_print_gf_matsubara(Gmats(2,:,:,:,:,:,:),"Fmats",iprint=4)
+  call dmft_print_gf_realaxis(Greal(1,:,:,:,:,:,:),"Greal",iprint=4)
+  call dmft_print_gf_realaxis(Greal(2,:,:,:,:,:,:),"Freal",iprint=4)
+
+
 contains
+
+
 
 
 
@@ -125,16 +173,18 @@ contains
     Hnambu(Nlat+1:2*Nlat,1:Nlat)        =    + diag(Self_HFB)
     Hnambu(Nlat+1:2*Nlat,Nlat+1:2*Nlat) = -H - diag(Sigma_HFB)
     call eigh(HNambu,ENambu)
-    do ilat=1,2*Nlat
-       write(100,*)ilat,ENambu(ilat)
-    enddo
-    rewind(100)
+    ! do ilat=1,2*Nlat
+    !    write(100,*)ilat,ENambu(ilat)
+    ! enddo
+    ! rewind(100)
     RhoDiag  = fermi(ENambu,beta)
     RhoNambu = matmul(HNambu, matmul(diag(RhoDiag),transpose(HNambu)) ) 
     forall(ilat=1:Nlat)
        nii(ilat) = RhoNambu(ilat,ilat)
        pii(ilat) = RhoNambu(ilat,ilat+Nlat)
     end forall
+    call save_array("nVSisite.restart",nii(:))
+    call save_array("phiVSisite.restart",pii(:))
   end subroutine BdG_Solve
 
 
@@ -176,12 +226,12 @@ contains
     print*,"<nimp>  =",nimp
     print*,"<phi>   =",phi
     print*,"<ccdw>  =",ccdw
-    call splot("nVSiloop.bdg",iloop,nimp,append=.true.)
-    call splot("phiVSiloop.bdg",iloop,phi,append=.true.)
-    call splot("ccdwVSiloop.bdg",iloop,ccdw,append=.true.)
-    call store_data("nVSisite"//trim(suffix),nii(:))
-    call store_data("phiVSisite"//trim(suffix),pii(:))
-    call store_data("cdwVSisite"//trim(suffix),cdwii)
+    open(unit=free_unit(unit),file="n_phi_cdwVSiloop.bdg",access='append')
+    write(unit,*)iloop,nimp,phi,ccdw
+    close(unit)
+    call save_array("nVSisite"//trim(suffix),nii(:))
+    call save_array("phiVSisite"//trim(suffix),pii(:))
+    call save_array("cdwVSisite"//trim(suffix),cdwii)
     !WHEN CONVERGED IS ACHIEVED PLOT ADDITIONAL INFORMATION:
     if(converged)then
        do row=1,Nside
@@ -196,17 +246,23 @@ contains
        call splot3d("3d_nVSij"//trim(suffix),grid_x,grid_y,nij)
        call splot3d("3d_phiVSij"//trim(suffix),grid_x,grid_y,pij)
        call get_moments(nii(:),mean,sdev,var,skew,kurt)
-       call splot("statistics.n"//trim(suffix),mean,sdev,var,skew,kurt)
+       open(unit=free_unit(unit),file="statistics.n"//trim(suffix))
+       write(unit,*)mean,sdev,var,skew,kurt
+       close(unit)
        data_mean(1)=mean
        data_sdev(1)=sdev
        !
        call get_moments(pii(:),mean,sdev,var,skew,kurt)
-       call splot("statistics.phi"//trim(suffix),mean,sdev,var,skew,kurt)
+       open(unit=free_unit(unit),file="statistics.phi"//trim(suffix))
+       write(unit,*)mean,sdev,var,skew,kurt
+       close(unit)
        data_mean(2)=mean
        data_sdev(2)=sdev
        !
        call get_moments(cdwii,mean,sdev,var,skew,kurt)
-       call splot("statistics.cdwn"//trim(suffix),mean,sdev,var,skew,kurt)
+       open(unit=free_unit(unit),file="statistics.cdwn"//trim(suffix))
+       write(unit,*)mean,sdev,var,skew,kurt
+       close(unit)
        !
        data_covariance(1,:)=nii(:)
        data_covariance(2,:)=pii(:)
@@ -230,7 +286,7 @@ contains
        enddo
        close(10)
     end if
-    nii=nii/2
+    nii=nii/2d0
   end subroutine print_sc_out
 
 
