@@ -19,7 +19,7 @@ program bdg_disorder
   real(8),allocatable,dimension(:)                :: erandom
   real(8),dimension(:),allocatable                :: nii,pii ![Nlat]
   real(8),dimension(:),allocatable                :: nii_prev,pii_prev ![Nlat]
-  logical                                         :: converged,bool
+  logical                                         :: converged,bool,igetgf,boolN,boolP
   integer                                         :: i,is,iloop,nrandom,idum
   real(8),dimension(:),allocatable                :: wm,wr
   complex(8),allocatable,dimension(:,:,:,:)       :: Hk ![2][Nlat][Nlat][1]
@@ -30,6 +30,8 @@ program bdg_disorder
   !
   complex(8),allocatable,dimension(:,:,:,:,:,:,:) :: Gmats,Greal,Smats,Sreal ![2][Nlat][1][1][1][1][L]
 
+
+
   ! READ INPUT FILES !
   call parse_cmd_variable(finput,"FINPUT",default="inputBDG.conf")
   call parse_input_variable(Nside,"NSIDE",finput,default=6)
@@ -39,6 +41,7 @@ program bdg_disorder
   call parse_input_variable(wmixing,"WMIXING",finput,default=0.5d0)
   call parse_input_variable(Wdis,"WDIS",finput,default=0.d0)
   call parse_input_variable(idum,"IDUM",finput,default=1234567)
+  call parse_input_variable(igetgf,"IGETGF",finput,default=.false.)
   call parse_input_variable(nsc,"NSC",finput,default=0.5d0,comment="Value of the initial density per spin (1/2=half-filling).")
   call parse_input_variable(deltasc,"DELTASC",finput,default=0.02d0,comment="Value of the SC symmetry breaking term.")
   call parse_input_variable(nloop,"NLOOP",finput,default=500,comment="Max number of iterations.")
@@ -47,8 +50,9 @@ program bdg_disorder
   call parse_input_variable(wini,"WINI",finput,default=-5.d0,comment="Smallest real-axis frequency")
   call parse_input_variable(wfin,"WFIN",finput,default=5.d0,comment="Largest real-axis frequency")
   call parse_input_variable(bdg_error,"BDG_ERROR",finput,default=0.00001d0,comment="Error threshold for the convergence")
-  call parse_input_variable(nsuccess,"NSUCCESS",finput,default=1,comment="Number of successive iterations below threshold for convergence")
+  call parse_input_variable(nsuccess,"NSUCCESS",finput,default=1,comment="Number of successive iterations below threshold for convergence")  
   call save_input_file(finput)
+  call print_input()
 
   call add_ctrl_var(beta,"BETA")
   call add_ctrl_var(0d0,"XMU")
@@ -58,6 +62,7 @@ program bdg_disorder
 
   ! SET THE COMPRESSION THRESHOLD TO 1Mb (1024Kb)
   call set_store_size(1024)
+
 
   ! GET THE ACTUAL NUMBER OF LATTICE SITES !
   Nlat = Nside*Nside
@@ -76,17 +81,14 @@ program bdg_disorder
 
   ! GET RANDOM ENERGIES
   allocate(erandom(Nlat))
-  call random_seed(size=nrandom)
-  call random_seed(put=(/(idum,i=1,nrandom)/))
-  call random_number(erandom)
+  call mersenne_init(idum)
+  call mt_random(erandom)
   erandom=(2.d0*erandom-1.d0)*Wdis/2.d0
   inquire(file='erandom.restart',exist=bool)
   if(bool)then
      if(file_length('erandom.restart')/=Nlat)stop "ed_ahm_disorder error: found erandom.restart with length different from Nlat"
      call read_array('erandom.restart',erandom)
   endif
-  call save_array("erandom.bdg",erandom)
-
 
   ! GET THE TIGHT BINDING HAMILTONIAN FOR THE SQUARE LATTICE 
   allocate(H0(Nlat,Nlat))
@@ -96,10 +98,37 @@ program bdg_disorder
 
   nii=nsc;
   pii=deltasc;
-  inquire(file="nVSisite.restart",exist=bool)
-  if(bool)call read_array("nVSisite.restart",nii)
-  inquire(file="phiVSisite.restart",exist=bool)
-  if(bool)call read_array("phiVSisite.restart",pii)
+  inquire(file="nVSisite.restart",exist=boolN)
+  if(boolN)call read_array("nVSisite.restart",nii)
+  inquire(file="phiVSisite.restart",exist=boolP)
+  if(boolP)call read_array("phiVSisite.restart",pii)
+
+  if(igetgf)then
+     if(.not.boolN.OR..not.boolP)stop "Can not read the input Nii, Pii in .restart files"
+     allocate(Gmats(2,Nlat,1,1,1,1,Lmats),Smats(2,Nlat,1,1,1,1,Lmats))
+     allocate(Greal(2,Nlat,1,1,1,1,Lreal),Sreal(2,Nlat,1,1,1,1,Lreal))
+     Smats=zero ; Sreal=zero
+     Gmats=zero ; Greal=zero
+     forall(i=1:Nlat)
+        Smats(1,i,1,1,1,1,:)= Uloc*(nii(i)-0.5d0)
+        Sreal(1,i,1,1,1,1,:)= Uloc*(nii(i)-0.5d0)
+        Smats(2,i,1,1,1,1,:)= Uloc*pii(i)
+        Sreal(2,i,1,1,1,1,:)= Uloc*pii(i)
+     end forall
+     !
+     allocate(Hk(2,Nlat,Nlat,1))
+     Hk(1,:,:,1)    =     H0
+     Hk(2,:,:,1)    =    -H0
+     !
+     call dmft_gloc_matsubara(Hk,[1d0],Gmats,Smats)
+     call dmft_gloc_realaxis(Hk,[1d0],Greal,Sreal)
+     call dmft_print_gf_matsubara(Gmats(1,:,:,:,:,:,:),"Gmats",iprint=4)
+     call dmft_print_gf_matsubara(Gmats(2,:,:,:,:,:,:),"Fmats",iprint=4)
+     call dmft_print_gf_realaxis(Greal(1,:,:,:,:,:,:),"Greal",iprint=4)
+     call dmft_print_gf_realaxis(Greal(2,:,:,:,:,:,:),"Freal",iprint=4)
+  endif
+
+
   iloop=0;
   converged=.false.;
   !+-------------------------------------+!
@@ -123,31 +152,9 @@ program bdg_disorder
   enddo
   !+-------------------------------------+!
 
-
-  allocate(Gmats(2,Nlat,1,1,1,1,Lmats),Smats(2,Nlat,1,1,1,1,Lmats))
-  allocate(Greal(2,Nlat,1,1,1,1,Lreal),Sreal(2,Nlat,1,1,1,1,Lreal))
-  Smats=zero ; Sreal=zero
-  Gmats=zero ; Greal=zero
-  forall(i=1:Nlat)
-     Smats(1,i,1,1,1,1,:)= Uloc*(nii(i)-0.5d0)
-     Sreal(1,i,1,1,1,1,:)= Uloc*(nii(i)-0.5d0)
-     Smats(2,i,1,1,1,1,:)= Uloc*pii(i)
-     Sreal(2,i,1,1,1,1,:)= Uloc*pii(i)
-  end forall
-  !
-  allocate(Hk(2,Nlat,Nlat,1))
-  Hk(1,:,:,1)    =     H0
-  Hk(2,:,:,1)    =    -H0
-  !
-
-  call dmft_gloc_matsubara(Hk,[1d0],Gmats,Smats)
-  call dmft_gloc_realaxis(Hk,[1d0],Greal,Sreal)
-
-  call dmft_print_gf_matsubara(Gmats(1,:,:,:,:,:,:),"Gmats",iprint=4)
-  call dmft_print_gf_matsubara(Gmats(2,:,:,:,:,:,:),"Fmats",iprint=4)
-  call dmft_print_gf_realaxis(Greal(1,:,:,:,:,:,:),"Greal",iprint=4)
-  call dmft_print_gf_realaxis(Greal(2,:,:,:,:,:,:),"Freal",iprint=4)
-
+  call save_array("nVSisite.restart",nii)
+  call save_array("phiVSisite.restart",pii)
+  call save_array('erandom.restart',erandom)
 
 contains
 
@@ -183,8 +190,7 @@ contains
        nii(ilat) = RhoNambu(ilat,ilat)
        pii(ilat) = RhoNambu(ilat,ilat+Nlat)
     end forall
-    call save_array("nVSisite.restart",nii(:))
-    call save_array("phiVSisite.restart",pii(:))
+
   end subroutine BdG_Solve
 
 
