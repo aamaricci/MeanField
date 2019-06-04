@@ -72,7 +72,7 @@ program mf_bhz_2d
 
 
   global_params = 0d0
-  params        = [0.1d0,-0.1d0,0d0,2d0]   ![Sz,Tz,Rz,N]
+  params        = [0.1d0,0.1d0,0d0,2d0]   ![Sz,Tz,Rz,N]
   !
   inquire(file="params.restart",exist=iexist)
   if(iexist)call read_array("params.restart",params)
