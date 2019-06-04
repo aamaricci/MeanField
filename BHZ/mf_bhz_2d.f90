@@ -19,7 +19,7 @@ program mf_bhz_2d
   real(8)                                       :: chern,z2,Uloc,Jh,JU,Sz,Tz,Rz,Ntot
   real(8)                                       :: mh,rh,lambda,delta
   real(8)                                       :: xmu,beta,eps,Eout(2)
-  real(8)                                       :: dens(Nso),wmix,it_error
+  real(8)                                       :: dens(Nso),wmix,it_error,sb_field
   complex(8)                                    :: Hloc(Nso,Nso)
   complex(8),dimension(:,:,:,:,:),allocatable   :: Gmats,Greal
   character(len=20)                             :: file
@@ -39,6 +39,7 @@ program mf_bhz_2d
   call parse_input_variable(eps,"EPS","inputBHZ.conf",default=4.d-2)
   call parse_input_variable(beta,"BETA","inputBHZ.conf",default=1000.d0)
   call parse_input_variable(wmix,"WMIX","inputBHZ.conf",default=0.5d0)
+  call parse_input_variable(sb_field,"SB_FIELD","inputBHZ.conf",default=0.1d0)
   call parse_input_variable(it_error,"IT_ERROR","inputBHZ.conf",default=1d-5)
   call parse_input_variable(maxiter,"MAXITER","inputBHZ.conf",default=100)
   call parse_input_variable(file,"FILE","inputBHZ.conf",default="hkfile_bhz.in")
@@ -72,10 +73,11 @@ program mf_bhz_2d
 
 
   global_params = 0d0
-  params        = [0.1d0,0.1d0,0d0,2d0]   ![Sz,Tz,Rz,N]
+  params        = [sb_field,sb_field,0d0,2d0]   ![Sz,Tz,Rz,N]
   !
   inquire(file="params.restart",exist=iexist)
   if(iexist)call read_array("params.restart",params)
+  params(1)=params(1)+sb_field
   converged=.false. ; iter=0
   do while(.not.converged.AND.iter<maxiter)
      iter=iter+1
@@ -124,6 +126,12 @@ program mf_bhz_2d
 
 
 
+
+  !GET Z2 INVARIANT:
+  allocate(ktrims(2,4))
+  ktrims=reshape( [ [0d0,0d0] , [0d0,pi] , [pi,0d0] , [pi,pi] ] , shape(ktrims))
+  call get_z2_number(ktrims,[2,4],z2)
+  print*,z2
 
 
 contains
@@ -192,6 +200,38 @@ contains
     ! HkMF = HkMF + a(4)*(3*Uloc - 5*Jh)/4d0*diag(ones(Nso))
     ! HkMF = HkMF + (Uloc+Jh)/2d0*a(1)**2 + (Uloc-5d0*Jh)/2d0*a(2)**2
   end function mf_Hk_correction
+
+
+  subroutine get_z2_number(ktrims,band_indices,z2)
+    real(8),dimension(:,:),intent(in)       :: ktrims
+    integer,dimension(:),intent(in)         :: band_indices
+    complex(8),dimension(:,:,:),allocatable :: Htrims
+    real(8),dimension(:,:),allocatable      :: Etrims
+    complex(8),dimension(:),allocatable     :: Delta
+    real(8)                                 :: z2
+    integer                                 :: i,j,Ntrim,itrim,Nocc,unit
+    !
+    Ntrim=size(Ktrims,2)
+    Nocc = size(band_indices)
+    allocate(Htrims(Nso,Nso,Ntrim),Etrims(Nocc,Ntrim))
+    allocate(Delta(Ntrim))
+    !
+    do itrim=1,Ntrim
+       Htrims(:,:,itrim) = hk_model(Ktrims(:,itrim),Nso)
+       Delta(itrim)=-sign(1d0,dreal(Htrims(1,1,itrim)))
+    enddo
+    z2=product(Delta(:))
+    if(z2>0)then
+       z2=0d0
+    else
+       z2=1d0
+    end if
+    open(free_unit(unit),file="z2_invariant.dat")
+    write(unit,*) z2
+    close(unit)
+  end subroutine get_z2_number
+
+
 
 end program mf_bhz_2d
 
