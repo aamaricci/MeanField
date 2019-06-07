@@ -24,7 +24,7 @@ program bhz_3d
   complex(8)                                    :: w,Hloc(Nso,Nso)
   complex(8),dimension(:,:,:,:,:),allocatable   :: Gmats,Greal
   character(len=20)                             :: file,nkstring
-  logical                                       :: iexist,converged
+  logical                                       :: iexist,converged,withgf
   complex(8),dimension(Nso,Nso)                 :: Gamma5,GammaX,GammaY,GammaZ,GammaS
   real(8),dimension(3)                          :: vecK,vecRi,vecRj
   complex(8),dimension(:,:),allocatable         :: rhoH
@@ -45,6 +45,7 @@ program bhz_3d
   call parse_input_variable(sb_field,"SB_FIELD","inputBHZ.conf",default=0.01d0)
   call parse_input_variable(it_error,"IT_ERROR","inputBHZ.conf",default=1d-5)
   call parse_input_variable(maxiter,"MAXITER","inputBHZ.conf",default=100)
+  call parse_input_variable(withgf,"WITHGF","inputBHZ.conf",default=.false.)
   call save_input_file("inputBHZ.conf")
   !
   call add_ctrl_var(beta,"BETA")
@@ -84,6 +85,11 @@ program bhz_3d
   inquire(file="params.restart",exist=iexist)
   if(iexist)call read_array("params.restart",params)
   params(1)=params(1)+sb_field
+
+  open(100,file="sz.dat")
+  open(101,file="tz.dat")
+  open(102,file="dens.dat")
+
   converged=.false. ; iter=0
   do while(.not.converged.AND.iter<maxiter)
      iter=iter+1
@@ -99,6 +105,9 @@ program bhz_3d
   end do
   call save_array("params.restart",params)
   global_params = params
+  close(100)
+  close(101)
+  close(102)
 
 
 
@@ -197,6 +206,10 @@ contains
     a(2) = 0.5d0*sum(dens(:,1)) - 0.5d0*sum(dens(:,2)) !N_1  - N_2
     print*,iter,a(1),a(2)
     !
+    rewind(100);rewind(101);rewind(102)
+    write(100,*)a(1)
+    write(101,*)a(2)
+    write(102,*)(dens(1,iorb),iorb=1,Norb),(dens(2,iorb),iorb=1,Norb)
   end subroutine solve_MF_bhz
 
 
@@ -231,7 +244,7 @@ contains
   function mf_Hk_correction(a) result(HkMF)
     real(8),dimension(Nso)        :: a
     complex(8),dimension(Nso,Nso) :: HkMF
-    HkMF = a(2)*(Uloc - 5d0*Jh)/2d0*Gamma5 - a(1)*(Uloc+Jh)/2d0*GammaS
+    HkMF = -a(2)*(Uloc - 5d0*Jh)/2d0*Gamma5 - a(1)*(Uloc+Jh)/2d0*GammaS
   end function mf_Hk_correction
 
 

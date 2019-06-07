@@ -23,7 +23,7 @@ program mf_bhz_2d
   complex(8)                                    :: Hloc(Nso,Nso)
   complex(8),dimension(:,:,:,:,:),allocatable   :: Gmats,Greal
   character(len=20)                             :: file
-  logical                                       :: iexist,converged
+  logical                                       :: iexist,converged,withgf
   complex(8),dimension(Nso,Nso)                 :: Gamma1,Gamma2,Gamma5,GammaS
   real(8),dimension(Nso) :: params,params_prev,global_params
 
@@ -42,6 +42,7 @@ program mf_bhz_2d
   call parse_input_variable(sb_field,"SB_FIELD","inputBHZ.conf",default=0.1d0)
   call parse_input_variable(it_error,"IT_ERROR","inputBHZ.conf",default=1d-5)
   call parse_input_variable(maxiter,"MAXITER","inputBHZ.conf",default=100)
+  call parse_input_variable(withgf,"WITHGF","inputBHZ.conf",default=.false.)
   !
   call save_input_file("inputBHZ.conf")
   !
@@ -77,6 +78,10 @@ program mf_bhz_2d
   inquire(file="params.restart",exist=iexist)
   if(iexist)call read_array("params.restart",params)
   params(1)=params(1)+sb_field
+
+  open(100,file="sz.dat")
+  open(101,file="tz.dat")
+  open(102,file="dens.dat")
   converged=.false. ; iter=0
   do while(.not.converged.AND.iter<maxiter)
      iter=iter+1
@@ -92,36 +97,40 @@ program mf_bhz_2d
   end do
   call save_array("params.restart",params)
   global_params = params
+  close(100)
+  close(101)
+  close(102)
+
+  if(withgf)then
+     !SOLVE AND PLOT THE FULLY HOMOGENOUS PROBLEM:  
+     write(*,*) "Using Nk_total="//txtfy(Nktot)
+     allocate(Hk(Nso,Nso,Nktot))
+     allocate(Wtk(Nktot))
+     call TB_build_model(Hk,hk_model,Nso,[Nkx,Nkx],wdos=.false.)
+     Wtk = 1d0/Nktot
+     allocate(Gmats(Nspin,Nspin,Norb,Norb,L))
+     allocate(Greal(Nspin,Nspin,Norb,Norb,L))
+     call dmft_gloc_matsubara(Hk,Wtk,Gmats,zeros(Nspin,Nspin,Norb,Norb,L))
+     call dmft_gloc_realaxis(Hk,Wtk,Greal,zeros(Nspin,Nspin,Norb,Norb,L))
+     !
+     call dmft_print_gf_matsubara(Gmats,"Gmats",iprint=1)
+     call dmft_print_gf_realaxis(Greal,"Greal",iprint=1)
+
+     !SOLVE ALONG A PATH IN THE BZ.
+     Npts=5
+     allocate(kpath(Npts,3))
+     kpath(1,:)=kpoint_X1
+     kpath(2,:)=kpoint_Gamma
+     kpath(3,:)=kpoint_M1
+     kpath(4,:)=kpoint_X1
+     kpath(5,:)=kpoint_Gamma
+     call TB_Solve_model(Hk_model,Nso,kpath,Nkpath,&
+          colors_name=[red1,blue1,red1,blue1],&
+          points_name=[character(len=20) :: 'X', 'G', 'M', 'X', 'G'],&
+          file="Eigenband.nint")
+  endif
 
 
-  !SOLVE AND PLOT THE FULLY HOMOGENOUS PROBLEM:  
-  write(*,*) "Using Nk_total="//txtfy(Nktot)
-  allocate(Hk(Nso,Nso,Nktot))
-  allocate(Wtk(Nktot))
-  call TB_build_model(Hk,hk_model,Nso,[Nkx,Nkx],wdos=.false.)
-  Wtk = 1d0/Nktot
-
-  allocate(Gmats(Nspin,Nspin,Norb,Norb,L))
-  allocate(Greal(Nspin,Nspin,Norb,Norb,L))
-  call dmft_gloc_matsubara(Hk,Wtk,Gmats,zeros(Nspin,Nspin,Norb,Norb,L))
-  call dmft_gloc_realaxis(Hk,Wtk,Greal,zeros(Nspin,Nspin,Norb,Norb,L))
-  !
-  call dmft_print_gf_matsubara(Gmats,"Gmats",iprint=1)
-  call dmft_print_gf_realaxis(Greal,"Greal",iprint=1)
-
-
-  !SOLVE ALONG A PATH IN THE BZ.
-  Npts=5
-  allocate(kpath(Npts,3))
-  kpath(1,:)=kpoint_X1
-  kpath(2,:)=kpoint_Gamma
-  kpath(3,:)=kpoint_M1
-  kpath(4,:)=kpoint_X1
-  kpath(5,:)=kpoint_Gamma
-  call TB_Solve_model(Hk_model,Nso,kpath,Nkpath,&
-       colors_name=[red1,blue1,red1,blue1],&
-       points_name=[character(len=20) :: 'X', 'G', 'M', 'X', 'G'],&
-       file="Eigenband.nint")
 
 
 
@@ -174,6 +183,10 @@ contains
     a(2) = 0.5d0*sum(dens(:,1)) - 0.5d0*sum(dens(:,2)) !N_1  - N_2
     print*,iter,a(1),a(2)
     !
+    rewind(100);rewind(101);rewind(102)
+    write(100,*)a(1)
+    write(101,*)a(2)
+    write(102,*)(dens(1,iorb),iorb=1,Norb),(dens(2,iorb),iorb=1,Norb)
   end subroutine solve_MF_bhz
 
 
@@ -195,7 +208,7 @@ contains
   function mf_Hk_correction(a) result(HkMF)
     real(8),dimension(Nso)        :: a
     complex(8),dimension(Nso,Nso) :: HkMF
-    HkMF = a(2)*(Uloc - 5d0*Jh)/2d0*Gamma5 - a(1)*(Uloc+Jh)/2d0*GammaS
+    HkMF = -a(2)*(Uloc - 5d0*Jh)/2d0*Gamma5 - a(1)*(Uloc+Jh)/2d0*GammaS
     ! HkMF = HkMF + a(4)*(3*Uloc - 5*Jh)/4d0*diag(ones(Nso))
     ! HkMF = HkMF + (Uloc+Jh)/2d0*a(1)**2 + (Uloc-5d0*Jh)/2d0*a(2)**2
   end function mf_Hk_correction
