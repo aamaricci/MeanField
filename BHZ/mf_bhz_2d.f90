@@ -42,7 +42,6 @@ program mf_bhz_2d
   call parse_input_variable(sb_field,"SB_FIELD","inputBHZ.conf",default=0.1d0)
   call parse_input_variable(it_error,"IT_ERROR","inputBHZ.conf",default=1d-5)
   call parse_input_variable(maxiter,"MAXITER","inputBHZ.conf",default=100)
-  call parse_input_variable(file,"FILE","inputBHZ.conf",default="hkfile_bhz.in")
   !
   call save_input_file("inputBHZ.conf")
   !
