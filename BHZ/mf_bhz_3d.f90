@@ -14,8 +14,7 @@ program bhz_3d
   real(8)                                       :: kx,ky,kz
   real(8),dimension(:),allocatable              :: Wtk,Evals,rhoDiag
   real(8),dimension(:,:),allocatable            :: kpath,ktrims,Kgrid,Rgrid
-  complex(8),dimension(:,:,:),allocatable       :: Hk,Hij
-  complex(8),dimension(:,:,:,:),allocatable     :: Hlat
+  complex(8),dimension(:,:,:),allocatable       :: Hk
   integer                                       :: Iter,MaxIter,Nsuccess=2
   real(8)                                       :: chern,Uloc,Jh,JU,Sz,Tz,Rz,Ntot
   real(8)                                       :: ez,mh,rh,lambda,delta,lz
@@ -23,7 +22,7 @@ program bhz_3d
   real(8)                                       :: n(Nso),arg,dens(Nso),wmix,it_error,sb_field
   complex(8)                                    :: w,Hloc(Nso,Nso)
   complex(8),dimension(:,:,:,:,:),allocatable   :: Gmats,Greal
-  character(len=20)                             :: file,nkstring
+  character(len=20)                             :: file
   logical                                       :: iexist,converged,withgf
   complex(8),dimension(Nso,Nso)                 :: Gamma5,GammaX,GammaY,GammaZ,GammaS
   real(8),dimension(3)                          :: vecK,vecRi,vecRj
@@ -89,7 +88,6 @@ program bhz_3d
   open(100,file="sz.dat")
   open(101,file="tz.dat")
   open(102,file="dens.dat")
-
   converged=.false. ; iter=0
   do while(.not.converged.AND.iter<maxiter)
      iter=iter+1
@@ -103,7 +101,7 @@ program bhz_3d
      !
      call end_loop
   end do
-  call save_array("params.restart",params)
+  call save_array("params.out",params)
   global_params = params
   close(100)
   close(101)
@@ -111,20 +109,21 @@ program bhz_3d
 
 
 
-  write(*,*) "Using Nk_total="//txtfy(Nktot)
-  allocate(Hk(Nso,Nso,Nktot))
-  allocate(Wtk(Nktot))
-  call TB_build_model(Hk,hk_model,Nso,[Nkx,Nkx],wdos=.false.)
-  Wtk = 1d0/Nktot
+  if(withgf)then
+     write(*,*) "Using Nk_total="//txtfy(Nktot)
+     allocate(Hk(Nso,Nso,Nktot))
+     allocate(Wtk(Nktot))
+     call TB_build_model(Hk,hk_model,Nso,[Nkx,Nkx],wdos=.false.)
+     Wtk = 1d0/Nktot
 
-  allocate(Gmats(Nspin,Nspin,Norb,Norb,L))
-  allocate(Greal(Nspin,Nspin,Norb,Norb,L))
-  call dmft_gloc_matsubara(Hk,Wtk,Gmats,zeros(Nspin,Nspin,Norb,Norb,L))
-  call dmft_gloc_realaxis(Hk,Wtk,Greal,zeros(Nspin,Nspin,Norb,Norb,L))
-  !
-  call dmft_print_gf_matsubara(Gmats,"Gmats",iprint=1)
-  call dmft_print_gf_realaxis(Greal,"Greal",iprint=1)
-
+     allocate(Gmats(Nspin,Nspin,Norb,Norb,L))
+     allocate(Greal(Nspin,Nspin,Norb,Norb,L))
+     call dmft_gloc_matsubara(Hk,Wtk,Gmats,zeros(Nspin,Nspin,Norb,Norb,L))
+     call dmft_gloc_realaxis(Hk,Wtk,Greal,zeros(Nspin,Nspin,Norb,Norb,L))
+     !
+     call dmft_print_gf_matsubara(Gmats,"Gmats",iprint=1)
+     call dmft_print_gf_realaxis(Greal,"Greal",iprint=1)
+  endif
 
 
   !< SOLVE ALONG A PATH IN THE BZ.
@@ -230,15 +229,6 @@ contains
     !
     Hk = Hk + mf_hk_correction(global_params)
     !
-    ! Hk          = zero
-    ! Hk(1:2,1:2) = &
-    !      (Mh - cos(kx) - cos(ky) - ez*cos(kz))*pauli_tau_z +&
-    !      lambda*sin(kx)*pauli_tau_x + lambda*sin(ky)*pauli_tau_y
-    ! Hk(3:4,3:4) = conjg( &
-    !      (Mh-cos(-kx) - cos(-ky) - ez*cos(-kz))*pauli_tau_z +&
-    !      lambda*sin(-kx)*pauli_tau_x + lambda*sin(-ky)*pauli_tau_y)
-    ! Hk(1:2,3:4) = lambda*sin(kz)*pauli_tau_x
-    ! Hk(3:4,1:2) = lambda*sin(kz)*pauli_tau_x
   end function hk_model
 
   function mf_Hk_correction(a) result(HkMF)
