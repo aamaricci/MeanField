@@ -268,6 +268,6 @@ contains
 
 
 
-end program bhz_3d
+end program
 
 

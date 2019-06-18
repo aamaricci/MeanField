@@ -13,7 +13,7 @@ DIREXE=$(HOME)/.bin
 
 
 ##$ CHOOSE THE MODEL BY SELECTING THE PROGRAM DRIVER
-EXE=mf_bhz_3d_RealSpace
+EXE=bhz_2d_Anderson
 
 
 ##$ SET THE LOCATION WHERE TO PLACE THE EXECUTABLE (default is $HOME/.bin)
@@ -23,7 +23,7 @@ DIREXE=$(HOME)/.bin
 ##$ SET INCLUDE AND LINK OPTIONS USING pkg-config
 #INCARGS=$(shell pkg-config --cflags --libs-only-L dmft_tools scifor)
 INCARGS=$(shell pkg-config --cflags dmft_tools scifor)
-LIBARGS=$(shell pkg-config --libs   dmft_tools scifor)
+LIBARGS=-lblas -llapack $(shell pkg-config --libs   dmft_tools scifor)
 #-ldmft_tools -lscifor
 
 ifeq ($(PLAT),intel)

@@ -15,7 +15,7 @@ program mf_bhz_2d
   complex(8),dimension(:,:,:),allocatable       :: Hk
   complex(8),dimension(:,:,:,:),allocatable     :: Hlat
   real(8),dimension(:),allocatable              :: Wtk
-  integer :: Iter,MaxIter,Nsuccess=2
+  integer                                       :: Iter,MaxIter,Nsuccess=2
   real(8)                                       :: chern,z2,Uloc,Jh,JU,Sz,Tz,Rz,Ntot
   real(8)                                       :: mh,rh,lambda,delta
   real(8)                                       :: xmu,beta,eps,Eout(2)
@@ -25,7 +25,7 @@ program mf_bhz_2d
   character(len=20)                             :: file
   logical                                       :: iexist,converged,withgf
   complex(8),dimension(Nso,Nso)                 :: Gamma1,Gamma2,Gamma5,GammaS
-  real(8),dimension(Nso) :: params,params_prev,global_params
+  real(8),dimension(Nso)                        :: params,params_prev,global_params
 
 
   call parse_input_variable(nkx,"NKX","inputBHZ.conf",default=25)
