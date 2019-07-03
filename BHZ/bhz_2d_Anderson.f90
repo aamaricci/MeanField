@@ -88,33 +88,30 @@ program bhz_2d_disorder
   Hlat=zero
   !
   allocate(Links(4,2))
-  Links(1,:) = [1,0,0]
-  Links(2,:) = [0,1,0]
-  Links(3,:) = [-1,0,0]
-  Links(4,:) = [0,-1,0]
-  print*,"Building up Hlat model"
+  Links(1,:) = [1,0]
+  Links(2,:) = [0,1]
+  Links(3,:) = [-1,0]
+  Links(4,:) = [0,-1]
   call TB_build_model(Hlat,ts_model,Nso,[Nkx,Nky],Links,pbc=.true.)
-  print*,"Done"
-  
+
+
+
   !< Build up disorder:
-  print*,"Building erandom 1"
   allocate(erandom(Nlat))
-  call mersenne_init(idum)  
+  call mersenne_init(idum)
   call mt_random(erandom)
-  print*,"Building erandom 2"
   erandom=(2d0*erandom-1d0)*Wdis/2d0
-  inquire(file='erandom.restart',exist=bool)
+  inquire(file='erandom_'//str(idum)//'.restart',exist=bool)
   if(bool)then
-     if(file_length('erandom.restart')/=Nlat)stop "bhz_2d_anderson error: found erandom.restart with length different from Nlat"
-     call read_array('erandom.restart',erandom)
+     if(file_length('erandom_'//str(idum)//'.restart')/=Nlat)stop "bhz_2d_anderson error: found erandom.restart with length different from Nlat"
+     call read_array('erandom_'//str(idum)//'.restart',erandom)
   endif
-  print*,"Building erandom 3"
-  call save_array("erandom.used",erandom)
+  call save_array('erandom_'//str(idum)//'.used',erandom)
+
 
   allocate(Hij(Nlat*Nso,Nlat*Nso,1))
   Hij = zero
   !
-  print*,"Building erandom 4"
   select case(disorder_type)
   case(0)
      do ilat=1,Nlat
@@ -140,28 +137,28 @@ program bhz_2d_disorder
      enddo
   enddo
 
-  open(100,file="sz.dat")
-  open(101,file="tz.dat")
-  open(102,file="dens.dat")
-  !
-  print*,"Entering Anderson"
-  call solve_Anderson_bhz()
-  print*,"Done"
-  !;
-  close(100);close(101);close(102)
+  open(99,file="list_idum.dat",access='append')
+  write(99,*)idum
+  close(99)
 
+  open(100,file="sz_"//str(idum)//".dat")
+  open(101,file="tz_"//str(idum)//".dat")
+  open(102,file="dens_"//str(idum)//".dat")
+  !
+  call solve_Anderson_bhz()
+  !
+  close(100);close(101);close(102)
 
   !< BUILD THE LOCAL GF
   if(withgf)then
      allocate(GLmats(Nlat,Nspin,Nspin,Norb,Norb,L))
      allocate(GLreal(Nlat,Nspin,Nspin,Norb,Norb,L))
      call dmft_gloc_matsubara(Hij,[1d0],GLmats,zeros(Nlat,Nspin,Nspin,Norb,Norb,L))
-     ! call dmft_print_gf_matsubara(GLmats,"Gloc",iprint=4)
-
+     call dmft_print_gf_matsubara(GLmats,"Gloc",iprint=1)
+     !
      call dmft_gloc_realaxis(Hij,[1d0],GLreal,zeros(Nlat,Nspin,Nspin,Norb,Norb,L))
-     !call dmft_print_gf_realaxis(GLreal,"Gloc",iprint=1)
+     call dmft_print_gf_realaxis(GLreal,"Gloc",iprint=1)
   endif
-
 
 
 
@@ -225,7 +222,7 @@ contains
     case (4) !DOWN HOPPING
        Hts = -0.5d0*Gamma5 - xi*0.5d0*lambda*GammaY
     case default 
-       stop "ts_model ERROR: link index in {0..6}"
+       stop "ts_model ERROR: link index in {0..4}"
     end select
   end function ts_model
 

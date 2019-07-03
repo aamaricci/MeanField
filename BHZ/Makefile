@@ -23,7 +23,7 @@ DIREXE=$(HOME)/.bin
 ##$ SET INCLUDE AND LINK OPTIONS USING pkg-config
 #INCARGS=$(shell pkg-config --cflags --libs-only-L dmft_tools scifor)
 INCARGS=$(shell pkg-config --cflags dmft_tools scifor)
-LIBARGS=-lblas -llapack $(shell pkg-config --libs   dmft_tools scifor)
+LIBARGS=$(shell pkg-config --libs   dmft_tools scifor)
 #-ldmft_tools -lscifor
 
 ifeq ($(PLAT),intel)
