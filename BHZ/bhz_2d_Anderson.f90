@@ -154,10 +154,10 @@ program bhz_2d_disorder
      allocate(GLmats(Nlat,Nspin,Nspin,Norb,Norb,L))
      allocate(GLreal(Nlat,Nspin,Nspin,Norb,Norb,L))
      call dmft_gloc_matsubara(Hij,[1d0],GLmats,zeros(Nlat,Nspin,Nspin,Norb,Norb,L))
-     call dmft_print_gf_matsubara(GLmats,"Gloc",iprint=1)
+     call dmft_print_gf_matsubara(GLmats,"Gloc_"//str(idum),iprint=4)
      !
      call dmft_gloc_realaxis(Hij,[1d0],GLreal,zeros(Nlat,Nspin,Nspin,Norb,Norb,L))
-     call dmft_print_gf_realaxis(GLreal,"Gloc",iprint=1)
+     call dmft_print_gf_realaxis(GLreal,"Gloc_"//str(idum),iprint=4)
   endif
 
 
