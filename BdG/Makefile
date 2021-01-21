@@ -28,7 +28,8 @@ endif
 ifeq ($(PLAT),gnu)
 NFLAG = -O2 -ffree-line-length-none
 DFLAG = -O0 -p -g -fimplicit-none -Wsurprising  -Waliasing -fwhole-file -fcheck=all -pedantic -fbacktrace -ffree-line-length-none
-FFLAG = -O3 -ffast-math -march=native -funroll-all-loops -ffree-line-length-none
+#FFLAG = -O3 -ffast-math -march=native -funroll-all-loops -ffree-line-length-none
+FFLAG = -O3 -funroll-loops -ffree-line-length-none
 FPPFLAG =-cpp
 endif
 

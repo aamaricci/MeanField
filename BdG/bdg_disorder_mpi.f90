@@ -1,9 +1,11 @@
-program bdg_disorder
+program bdg_disorder_mpi
   USE SCIFOR
   USE DMFT_TOOLS
+  !
+  USE MPI
   implicit none
   integer                                         :: Nside,Nlat
-  integer                                         :: Nloop
+  integer                                         :: Nloop,Nblock
   integer                                         :: Lmats,Lreal
   integer                                         :: Nsuccess
   real(8)                                         :: Uloc
@@ -15,7 +17,6 @@ program bdg_disorder
   real(8)                                         :: deltasc
   real(8)                                         :: wini,wfin
   real(8)                                         :: bdg_error
-  real(8) :: tstart,tstop
 
   real(8),allocatable,dimension(:)                :: erandom
   real(8),dimension(:),allocatable                :: nii,pii ![Nlat]
@@ -31,9 +32,15 @@ program bdg_disorder
   !
   complex(8),allocatable,dimension(:,:,:,:,:,:,:) :: Gmats,Greal,Smats,Sreal ![2][Nlat][1][1][1][1][L]
 
+  logical :: master
+
+  call init_BLACS()
+  master = get_master_BLACS()
+
   ! READ INPUT FILES !
   call parse_cmd_variable(finput,"FINPUT",default="inputBDG.conf")
-  call parse_input_variable(Nside,"NSIDE",finput,default=6)
+  call parse_input_variable(Nside,"NSIDE",finput,default=10)
+  call parse_input_variable(Nblock,"Nblock",finput,default=4)
   call parse_input_variable(ts,"TS",finput,default=0.5d0)
   call parse_input_variable(uloc,"ULOC",finput,default=-1d0,comment="Values of the local interaction")
   call parse_input_variable(beta,"BETA",finput,default=1000d0)
@@ -50,8 +57,8 @@ program bdg_disorder
   call parse_input_variable(wfin,"WFIN",finput,default=5.d0,comment="Largest real-axis frequency")
   call parse_input_variable(bdg_error,"BDG_ERROR",finput,default=0.00001d0,comment="Error threshold for the convergence")
   call parse_input_variable(nsuccess,"NSUCCESS",finput,default=1,comment="Number of successive iterations below threshold for convergence")  
-  call save_input_file(finput)
-  call print_input()
+  if(master)call save_input_file(finput)
+  if(master)call print_input()
 
   call add_ctrl_var(beta,"BETA")
   call add_ctrl_var(0d0,"XMU")
@@ -94,6 +101,7 @@ program bdg_disorder
   H0 = Htb_square_lattice(Nrow=Nside,Ncol=Nside,ts=ts)
   H0 = H0 + diag(Erandom)
 
+
   nii=nsc;
   pii=deltasc;
   inquire(file="nVSisite.restart",exist=boolN)
@@ -120,10 +128,12 @@ program bdg_disorder
      !
      call dmft_gloc_matsubara(Hk,[1d0],Gmats,Smats)
      call dmft_gloc_realaxis(Hk,[1d0],Greal,Sreal)
-     call dmft_print_gf_matsubara(Gmats(1,:,:,:,:,:,:),"Gmats",iprint=4)
-     call dmft_print_gf_matsubara(Gmats(2,:,:,:,:,:,:),"Fmats",iprint=4)
-     call dmft_print_gf_realaxis(Greal(1,:,:,:,:,:,:),"Greal",iprint=4)
-     call dmft_print_gf_realaxis(Greal(2,:,:,:,:,:,:),"Freal",iprint=4)
+     if(master)then
+        call dmft_print_gf_matsubara(Gmats(1,:,:,:,:,:,:),"Gmats",iprint=4)
+        call dmft_print_gf_matsubara(Gmats(2,:,:,:,:,:,:),"Fmats",iprint=4)
+        call dmft_print_gf_realaxis(Greal(1,:,:,:,:,:,:),"Greal",iprint=4)
+        call dmft_print_gf_realaxis(Greal(2,:,:,:,:,:,:),"Freal",iprint=4)
+     endif
   endif
 
 
@@ -132,10 +142,10 @@ program bdg_disorder
   !+-------------------------------------+!
   do while(.not.converged.AND.iloop<nloop) 
      iloop=iloop+1
-     call start_loop(iloop,nloop,"BdG-loop")
-
-     call BdG_Solve(nii,pii,H0)
+     if(master)call start_loop(iloop,nloop,"BdG-loop")
      !
+     call BdG_Solve(nii,pii,H0)
+     !     
      nii_prev = nii
      pii_prev = pii
      if(iloop>1)then
@@ -143,16 +153,24 @@ program bdg_disorder
         pii = wmixing*pii + (1d0-wmixing)*pii_prev
      endif
      !
-     converged = check_convergence_local(pii,bdg_error,nsuccess,nloop,file="error.err")
-     call print_sc_out(converged)
+     if(master)then
+        converged = check_convergence_local(pii,bdg_error,nsuccess,nloop,file="error.err")
+        call print_sc_out(converged)
+     endif
+     call bcast_MPI(MPI_COMM_WORLD,converged)
 
-     call end_loop()
+     if(master)call end_loop()
   enddo
   !+-------------------------------------+!
 
-  call save_array("nVSisite.restart",nii)
-  call save_array("phiVSisite.restart",pii)
-  call save_array('erandom.restart',erandom)
+  if(master)then
+     call save_array("nVSisite.restart",nii)
+     call save_array("phiVSisite.restart",pii)
+     call save_array('erandom.restart',erandom)
+  endif
+
+
+  call finalize_BLACS()
 
 contains
 
@@ -177,22 +195,15 @@ contains
     Hnambu(1:Nlat,Nlat+1:2*Nlat)        =    + diag(Self_HFB)
     Hnambu(Nlat+1:2*Nlat,1:Nlat)        =    + diag(Self_HFB)
     Hnambu(Nlat+1:2*Nlat,Nlat+1:2*Nlat) = -H - diag(Sigma_HFB)
-    call cpu_time(tstart)
-    call eigh(HNambu,ENambu)
-    call cpu_time(tstop)
-    print*,tstop-tstart
-
+    !
+    call p_eigh(HNambu,ENambu,Nblock)
     RhoDiag  = fermi(ENambu,beta)
-    call cpu_time(tstart)
-    !RhoNambu = matmul(HNambu, matmul(diag(RhoDiag),transpose(HNambu)) )
-    RhoNambu = (HNambu.x.(diag(RhoDiag))).x.(transpose(HNambu))
-    call cpu_time(tstop)
-    print*,tstop-tstart
+    RhoNambu = (HNambu.px.(diag(RhoDiag))).px.(transpose(HNambu))
     forall(ilat=1:Nlat)
        nii(ilat) = RhoNambu(ilat,ilat)
        pii(ilat) = RhoNambu(ilat,ilat+Nlat)
     end forall
-
+    return
   end subroutine BdG_Solve
 
 
@@ -240,6 +251,7 @@ contains
     call save_array("nVSisite"//trim(suffix),nii(:))
     call save_array("phiVSisite"//trim(suffix),pii(:))
     call save_array("cdwVSisite"//trim(suffix),cdwii)
+    !
     !WHEN CONVERGED IS ACHIEVED PLOT ADDITIONAL INFORMATION:
     if(converged)then
        do row=1,Nside
@@ -280,6 +292,7 @@ contains
           write(10,"(2f24.12)")(covariance_nd(i,j),j=1,2)
        enddo
        close(10)
+       !
        covariance_nd=0d0
        do i=1,2
           do j=1,2
@@ -376,4 +389,4 @@ contains
 
 
 
-end program bdg_disorder
+end program bdg_disorder_mpi

@@ -25,7 +25,7 @@ program bhz_2d_disorder
   real(8),allocatable,dimension(:)              :: erandom
   complex(8),dimension(:,:,:,:,:,:),allocatable :: GLmats,GLreal
   character(len=20)                             :: file
-  logical                                       :: iexist,converged,withgf,bool
+  logical                                       :: iexist,converged,with_mats_gf,with_real_gf,bool
   complex(8),dimension(Nso,Nso)                 :: Gamma5,GammaX,GammaY,GammaZ,GammaS,Gamma0
   real(8),dimension(3)                          :: vecK,vecRi,vecRj
   complex(8),dimension(:,:),allocatable         :: rhoH
@@ -47,7 +47,8 @@ program bhz_2d_disorder
   call parse_input_variable(sb_field,"SB_FIELD","inputBHZ.conf",default=0.01d0)
   call parse_input_variable(it_error,"IT_ERROR","inputBHZ.conf",default=1d-5)
   call parse_input_variable(maxiter,"MAXITER","inputBHZ.conf",default=100)
-  call parse_input_variable(withgf,"WITHGF","inputBHZ.conf",default=.false.)
+  call parse_input_variable(with_mats_gf,"WITH_MATS_GF","inputBHZ.conf",default=.false.)
+  call parse_input_variable(with_real_gf,"WITH_REAL_GF","inputBHZ.conf",default=.false.)
   call save_input_file("inputBHZ.conf")
   call print_input()
   !
@@ -145,17 +146,21 @@ program bhz_2d_disorder
   open(101,file="tz_"//str(idum)//".dat")
   open(102,file="dens_"//str(idum)//".dat")
   !
+  call start_timer
   call solve_Anderson_bhz()
+  call stop_timer
   !
   close(100);close(101);close(102)
 
   !< BUILD THE LOCAL GF
-  if(withgf)then
+  if(with_mats_gf)then
      allocate(GLmats(Nlat,Nspin,Nspin,Norb,Norb,L))
-     allocate(GLreal(Nlat,Nspin,Nspin,Norb,Norb,L))
      call dmft_gloc_matsubara(Hij,[1d0],GLmats,zeros(Nlat,Nspin,Nspin,Norb,Norb,L))
      call dmft_print_gf_matsubara(GLmats,"Gloc_"//str(idum),iprint=4)
-     !
+  endif
+
+  if(with_real_gf)then
+     allocate(GLreal(Nlat,Nspin,Nspin,Norb,Norb,L))
      call dmft_gloc_realaxis(Hij,[1d0],GLreal,zeros(Nlat,Nspin,Nspin,Norb,Norb,L))
      call dmft_print_gf_realaxis(GLreal,"Gloc_"//str(idum),iprint=4)
   endif
