@@ -13,13 +13,12 @@ DIREXE=$(HOME)/.bin
 
 
 ##$ CHOOSE THE MODEL BY SELECTING THE PROGRAM DRIVER
-EXE=mf_bhz_2d
+EXE=mf_km_2d
 
 
 ##$ SET THE LOCATION WHERE TO PLACE THE EXECUTABLE (default is $HOME/.bin)
 DIREXE=$(HOME)/.bin
 
-F2PY=f2py
 
 ##$ SET INCLUDE AND LINK OPTIONS USING pkg-config
 #INCARGS=$(shell pkg-config --cflags --libs-only-L dmft_tools scifor)
@@ -73,15 +72,6 @@ debug:
 	@echo ""
 	$(FC) $(DFLAG) $(EXE).f90 -o $(DIREXE)/$(EXE) $(INCARGS) $(LIBARGS)
 	@echo "Done"
-
-
-py:
-	@echo ""
-	@echo ""
-	$(F2PY) -c --verbose --f90exec=mpif90 --opt="$(FFLAG)" $(INCARGS) $(LIBARGS)  -m mf_bhz wrap_mf_bhz_2d.f90 
-	@echo "Done"
-
-
 clean: 
 	@echo "Cleaning:"
 	@rm -f *.mod *.o *~

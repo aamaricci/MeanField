@@ -13,7 +13,7 @@ DIREXE=$(HOME)/.bin
 
 
 ##$ CHOOSE THE MODEL BY SELECTING THE PROGRAM DRIVER
-EXE=mf_bhz_2d
+EXE=mf_bhz_2d_exc
 
 
 ##$ SET THE LOCATION WHERE TO PLACE THE EXECUTABLE (default is $HOME/.bin)
@@ -59,23 +59,7 @@ endif
 ##$ Extends the implicit support of the Makefile to .f90 files
 .SUFFIXES: .f90
 
-
 all:
-	@echo ""
-	@echo "compiling $(EXE).f90 .... "
-	@echo ""
-	$(FC) $(FFLAG) $(EXE).f90 -o $(DIREXE)/$(EXE) $(INCARGS) $(LIBARGS)
-	@echo "Done"
-
-debug:
-	@echo ""
-	@echo "compiling $(EXE).f90 .... "
-	@echo ""
-	$(FC) $(DFLAG) $(EXE).f90 -o $(DIREXE)/$(EXE) $(INCARGS) $(LIBARGS)
-	@echo "Done"
-
-
-py:
 	@echo ""
 	@echo ""
 	$(F2PY) -c --verbose --f90exec=mpif90 --opt="$(FFLAG)" $(INCARGS) $(LIBARGS)  -m mf_bhz wrap_mf_bhz_2d.f90 
